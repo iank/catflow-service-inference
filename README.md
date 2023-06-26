@@ -24,6 +24,8 @@ docker build -t iank1/catflow_service_inference:latest .
 # Test
 
 ```
+export CATFLOW_MODEL_NAME=your_model.pt
+export CATFLOW_MODEL_THRESHOLD=0.5
 pytest
 ```
 

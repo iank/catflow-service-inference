@@ -13,7 +13,13 @@ requires-python = ">=3.7"
 dependencies = [
   "catflow-worker>=0.1.6",
   "aiofiles",
+  "torch",
+  "torchvision",
   "opencv-python-headless",
+  "pandas",
+  "psutil",
+  "tqdm",
+  "ultralytics",
 ]
 
 [tool.setuptools]
@@ -32,3 +38,14 @@ dev = [
 
 [tool.setuptools_scm]
 write_to = "catflow_service_inference/_version.py"
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    # Fail on any warnings that are not explicitly matched below
+    "error",
+    # matplotlib
+    "ignore:Deprecated call to `pkg_resources\\.declare_namespace\\('.*'\\):DeprecationWarning",
+    # ultralytics
+    "ignore:pkg_resources is deprecated as an API",
+    "ignore:Please use `gaussian_filter1d` from the `scipy.ndimage` namespace, the `scipy.ndimage.filters` namespace is deprecated.:DeprecationWarning",
+]

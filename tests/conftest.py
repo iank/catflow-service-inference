@@ -1,6 +1,6 @@
 import logging
 
-disable_loggers = ["botocore", "s3transfer", "asyncio"]
+disable_loggers = ["botocore", "s3transfer", "asyncio", "PIL", "matplotlib"]
 
 
 def pytest_configure():
