@@ -41,13 +41,17 @@ async def inference_handler(
     global FEAT
     logging.info(f"[*] Message received ({key})")
 
-    pipeline, datatype = key.split(".")
-    if key in ["ingest.filteredframes", "detect.rawframes"]:
-        responsekey = f"{pipeline}.annotations"
+    pipeline, _ = key.split(".")
+    if pipeline == "filter":
+        responsekey = "ingest.annotatedframes"
         action = "annotate"
         logging.debug(f"Will generate annotations to {responsekey}")
-    elif key in ["ingest.rawframes"]:
-        responsekey = f"{pipeline}.embeddings"
+    elif pipeline == "detect":
+        responsekey = "detect.annotatedframes"
+        action = "annotate"
+        logging.debug(f"Will generate annotations to {responsekey}")
+    elif pipeline == "ingest":
+        responsekey = "filter.embeddings"
         action = "embed"
         logging.debug(f"Will generate embeddings to {responsekey}")
     else:
@@ -107,7 +111,7 @@ async def startup(queue: str, topic_key: str):
 
 
 def main() -> bool:
-    topic_key = "*.*frames"
+    topic_key = "*.rawframes"
     queue_name = "catflow-service-inference"
     logging.basicConfig(level=logging.INFO)
 

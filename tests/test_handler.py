@@ -127,7 +127,7 @@ async def test_worker2(s3_client, datafiles):
     assert status is True
     assert len(responses) == 1
     routing_key, annotations = responses[0]
-    assert routing_key == "detect.annotations"
+    assert routing_key == "detect.annotatedframes"
     assert len(annotations) == 2
 
     assert annotations[0][0] == "test1.png"
@@ -152,7 +152,7 @@ async def test_worker3(s3_client, datafiles):
     assert status is True
     assert len(responses) == 1
     routing_key, embeddings = responses[0]
-    assert routing_key == "ingest.embeddings"
+    assert routing_key == "filter.embeddings"
     assert len(embeddings) == 1
 
     key, vector = embeddings[0]
@@ -164,13 +164,13 @@ async def test_worker3(s3_client, datafiles):
 async def test_worker1(s3_client, datafiles):
     # Test worker's behavior in the 'ingest' pipeline (generate annotations)
     status, responses = await inference_handler(
-        ["test1.png"], "ingest.filteredframes", s3_client, AWS_BUCKET_NAME
+        ["test1.png"], "filter.rawframes", s3_client, AWS_BUCKET_NAME
     )
 
     assert status is True
     assert len(responses) == 1
     routing_key, annotations = responses[0]
-    assert routing_key == "ingest.annotations"
+    assert routing_key == "ingest.annotatedframes"
     assert len(annotations) == 1
 
     key, model_name, predictions = annotations[0]
