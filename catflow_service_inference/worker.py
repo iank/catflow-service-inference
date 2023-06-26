@@ -80,6 +80,9 @@ async def inference_handler(
             embedding = FEAT.get_vector(image)
             responseobjects.append((s3key, embedding))
 
+    logging.info(
+        f"[-] {action}: {len(responseobjects)} objects -> {responsekey} (1 msg)"
+    )
     return True, [(responsekey, responseobjects)]
 
 
