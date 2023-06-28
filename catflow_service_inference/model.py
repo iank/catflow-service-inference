@@ -1,6 +1,8 @@
 import torch
 import os
 
+from catflow_worker.types import Prediction
+
 
 class Model:
     def __init__(self, model_name, threshold):
@@ -20,7 +22,15 @@ class Model:
         predictions = []
         for result in results.xywh[0].tolist():
             x, y, width, height, confidence, class_id = result
-            prediction = [x, y, width, height, confidence, results.names[class_id]]
-            predictions.append(prediction)
+            predictions.append(
+                Prediction(
+                    x=x,
+                    y=y,
+                    width=width,
+                    height=height,
+                    confidence=confidence,
+                    label=results.names[class_id],
+                )
+            )
 
         return predictions

@@ -2,6 +2,14 @@ from typing import Any, List, Tuple
 import signal
 import asyncio
 from catflow_worker import Worker
+from catflow_worker.types import (
+    RawFrameSchema,
+    AnnotatedFrameSchema,
+    AnnotatedFrame,
+    EmbeddedFrameSchema,
+    EmbeddedFrame,
+    Embedding,
+)
 from .embedding import ImageFeatureExtractor
 from .model import Model
 from PIL import Image
@@ -34,56 +42,80 @@ async def inference_handler(
     """Run inference on the given frames
 
     ingest.rawframes: Generate embeddings
-    ingest.filteredframes: Generate annotations
-
+    filter.rawframes: Generate annotations
     detect.rawframes: Generate annotations"""
     global MODEL
     global FEAT
     logging.info(f"[*] Message received ({key})")
 
-    pipeline, _ = key.split(".")
-    if pipeline == "filter":
-        responsekey = "ingest.annotatedframes"
-        action = "annotate"
-        logging.debug(f"Will generate annotations to {responsekey}")
+    # Routing
+    pipeline, datatype = key.split(".")
+    assert datatype == "rawframes"
+
+    if pipeline == "ingest":
+        pipeline_out = "filter"
+        datatype_out = "embeddings"
+    elif pipeline == "filter":
+        pipeline_out = "ingest"
+        datatype_out = "annotatedframes"
     elif pipeline == "detect":
-        responsekey = "detect.annotatedframes"
-        action = "annotate"
-        logging.debug(f"Will generate annotations to {responsekey}")
-    elif pipeline == "ingest":
-        responsekey = "filter.embeddings"
-        action = "embed"
-        logging.debug(f"Will generate embeddings to {responsekey}")
+        pipeline_out = "detect"
+        datatype_out = "annotatedframes"
     else:
         raise ValueError(f"Unexpected message from {key}")
 
-    responseobjects = []
+    logging.debug(f"Will generate {datatype_out} to {pipeline_out}")
+
+    # Load message
+    msg_objs = RawFrameSchema(many=True).load(msg)
 
     # Download from S3 and open PIL image
-    for s3key in msg:
-        logging.debug(f"Downloading {s3key} from {bucket}")
+    responseobjects = []
+    for rawframe in msg_objs:
+        logging.debug(f"Downloading {rawframe.key} from {bucket}")
 
         buf = io.BytesIO()
         async with aiofiles.tempfile.NamedTemporaryFile("wb+") as f:
-            await s3.download_fileobj(bucket, s3key, f)
+            await s3.download_fileobj(bucket, rawframe.key, f)
             await f.seek(0)
             buf.write(await f.read())
 
         buf.seek(0)
         image = Image.open(buf)
 
-        if action == "annotate":
+        if datatype_out == "annotatedframes":
             predictions = MODEL.predict(image)
-            annotation = (s3key, MODEL.model_name, predictions)
-            responseobjects.append(annotation)
-        elif action == "embed":
-            embedding = FEAT.get_vector(image)
-            responseobjects.append((s3key, embedding))
+            annotatedframe = AnnotatedFrame(
+                key=rawframe.key,
+                source=rawframe.source,
+                model_name=MODEL.model_name,
+                predictions=predictions,
+            )
 
+            responseobjects.append(annotatedframe)
+        elif datatype_out == "embeddings":
+            vector = FEAT.get_vector(image)
+            embeddedframe = EmbeddedFrame(
+                key=rawframe.key,
+                source=rawframe.source,
+                embedding=Embedding(vector=vector),
+            )
+
+            responseobjects.append(embeddedframe)
+
+    # Dump response
+    if datatype_out == "annotatedframes":
+        schema_out = AnnotatedFrameSchema(many=True)
+    elif datatype_out == "embeddings":
+        schema_out = EmbeddedFrameSchema(many=True)
+
+    responseobjects_msg = schema_out.dump(responseobjects)
+
+    # Always do one message- videosplit service handled batching
     logging.info(
-        f"[-] {action}: {len(responseobjects)} objects -> {responsekey} (1 msg)"
+        f"[-] {len(responseobjects)} objects -> {pipeline_out}.{datatype_out} (1 msg)"
     )
-    return True, [(responsekey, responseobjects)]
+    return True, [(f"{pipeline_out}.{datatype_out}", responseobjects_msg)]
 
 
 async def shutdown(worker, task):

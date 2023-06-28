@@ -2,6 +2,14 @@ import pytest
 from catflow_service_inference.worker import inference_handler, load_models
 from catflow_service_inference.embedding import ImageFeatureExtractor
 from catflow_service_inference.model import Model
+from catflow_worker.types import (
+    RawFrame,
+    RawFrameSchema,
+    AnnotatedFrameSchema,
+    EmbeddedFrameSchema,
+    Prediction,
+    VideoFile,
+)
 from moto import mock_s3
 from pathlib import Path
 import boto3
@@ -85,8 +93,8 @@ def test_infer(datafiles):
     assert len(predictions) == 1
 
     prediction = predictions[0]
-    assert len(prediction) == 6  # x,y,w,h,conf,label
-    assert prediction[5] == "car"
+    assert isinstance(prediction, Prediction)
+    assert prediction.label == "car"
 
 
 def is_valid_embedding(vector):
@@ -113,70 +121,110 @@ def test_embed(datafiles):
 
 
 @pytest.mark.asyncio
-async def test_worker2(s3_client, datafiles):
+async def test_worker_detect(s3_client, datafiles):
     # Test worker's behavior in the 'detect' pipeline
-    status, responses = await inference_handler(
-        ["test1.png", "test2.png"], "detect.rawframes", s3_client, AWS_BUCKET_NAME
-    )
 
-    # responses = [ ("response.key", [
-    #   ("test1.png", modelname, [[x,y,w,h,c,l]]),
-    #   ("test2.png", modelname, [[x,y,w,h,c,l]]),
-    #   ] ) ]
+    # Expected input: list of RawFrame
+    video = VideoFile(key="test.mp4")
+    frames = [
+        RawFrame(key="test1.png", source=video),
+        RawFrame(key="test2.png", source=video),
+    ]
+    frames_msg = RawFrameSchema(many=True).dump(frames)
+
+    # Expected output: list of AnnotatedFrame
+    output_schema = AnnotatedFrameSchema(many=True)
+
+    status, responses = await inference_handler(
+        frames_msg, "detect.rawframes", s3_client, AWS_BUCKET_NAME
+    )
 
     assert status is True
     assert len(responses) == 1
-    routing_key, annotations = responses[0]
+
+    routing_key, annotations_msg = responses[0]
+    annotations = output_schema.load(annotations_msg)
+
     assert routing_key == "detect.annotatedframes"
     assert len(annotations) == 2
 
-    assert annotations[0][0] == "test1.png"
-    assert annotations[1][0] == "test2.png"
+    assert annotations[0].key == "test1.png"
+    assert annotations[1].key == "test2.png"
 
     for annotation in annotations:
-        key, model_name, predictions = annotation
+        assert annotation.source.key == "test.mp4"
+        assert annotation.model_name == "yolov5n"
+
+        predictions = annotation.predictions
         assert len(predictions) == 1
-        prediction = predictions[0]
-        assert len(prediction) == 6  # x,y,w,h,conf,label
-        assert prediction[5] == "car"
-        assert model_name == "yolov5n"
+        assert predictions[0].label == "car"
 
 
 @pytest.mark.asyncio
-async def test_worker3(s3_client, datafiles):
+async def test_worker_ingest(s3_client, datafiles):
     # Test worker's behavior in the 'ingest' pipeline (generate embeddings)
+
+    # Expected input: list of RawFrame (only ever one at a time in this pipeline)
+    video = VideoFile(key="test.mp4")
+    frames = [
+        RawFrame(key="test1.png", source=video),
+    ]
+    frames_msg = RawFrameSchema(many=True).dump(frames)
+
+    # Expected output: list of EmbeddedFrame
+    output_schema = EmbeddedFrameSchema(many=True)
+
     status, responses = await inference_handler(
-        ["test1.png"], "ingest.rawframes", s3_client, AWS_BUCKET_NAME
+        frames_msg, "ingest.rawframes", s3_client, AWS_BUCKET_NAME
     )
 
     assert status is True
     assert len(responses) == 1
-    routing_key, embeddings = responses[0]
+
+    routing_key, embeddings_msg = responses[0]
+    embeddings = output_schema.load(embeddings_msg)
+
     assert routing_key == "filter.embeddings"
     assert len(embeddings) == 1
 
-    key, vector = embeddings[0]
-    assert key == "test1.png"
-    assert is_valid_embedding(vector)
+    embeddedframe = embeddings[0]
+    assert embeddedframe.key == "test1.png"
+    assert embeddedframe.source.key == "test.mp4"
+    assert is_valid_embedding(embeddedframe.embedding.vector)
 
 
 @pytest.mark.asyncio
-async def test_worker1(s3_client, datafiles):
+async def test_worker_filter(s3_client, datafiles):
     # Test worker's behavior in the 'ingest' pipeline (generate annotations)
+
+    # Expected input: list of RawFrame (only ever one at a time in this pipeline)
+    video = VideoFile(key="test.mp4")
+    frames = [
+        RawFrame(key="test1.png", source=video),
+    ]
+    frames_msg = RawFrameSchema(many=True).dump(frames)
+
+    # Expected output: list of AnnotatedFrame
+    output_schema = AnnotatedFrameSchema(many=True)
+
     status, responses = await inference_handler(
-        ["test1.png"], "filter.rawframes", s3_client, AWS_BUCKET_NAME
+        frames_msg, "filter.rawframes", s3_client, AWS_BUCKET_NAME
     )
 
     assert status is True
     assert len(responses) == 1
-    routing_key, annotations = responses[0]
+
+    routing_key, annotations_msg = responses[0]
+    annotations = output_schema.load(annotations_msg)
+
     assert routing_key == "ingest.annotatedframes"
     assert len(annotations) == 1
 
-    key, model_name, predictions = annotations[0]
-    assert key == "test1.png"
+    annotation = annotations[0]
+    assert annotation.key == "test1.png"
+    assert annotation.source.key == "test.mp4"
+    assert annotation.model_name == "yolov5n"
+
+    predictions = annotation.predictions
     assert len(predictions) == 1
-    prediction = predictions[0]
-    assert len(prediction) == 6  # x,y,w,h,conf,label
-    assert prediction[5] == "car"
-    assert model_name == "yolov5n"
+    assert predictions[0].label == "car"
