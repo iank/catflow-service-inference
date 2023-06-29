@@ -22,15 +22,16 @@ class Model:
         predictions = []
         for result in results.xywh[0].tolist():
             x, y, width, height, confidence, class_id = result
-            predictions.append(
-                Prediction(
-                    x=x,
-                    y=y,
-                    width=width,
-                    height=height,
-                    confidence=confidence,
-                    label=results.names[class_id],
+            if confidence > self.threshold:
+                predictions.append(
+                    Prediction(
+                        x=x,
+                        y=y,
+                        width=width,
+                        height=height,
+                        confidence=confidence,
+                        label=results.names[class_id],
+                    )
                 )
-            )
 
         return predictions

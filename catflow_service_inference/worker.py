@@ -38,7 +38,7 @@ def load_models():
 
 async def inference_handler(
     msg: Any, key: str, s3: Any, bucket: str
-) -> Tuple[bool, List[Tuple[str, Tuple[str, List[float]]]]]:
+) -> Tuple[bool, List[Tuple[str, Any]]]:
     """Run inference on the given frames
 
     ingest.rawframes: Generate embeddings
