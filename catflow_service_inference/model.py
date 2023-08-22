@@ -8,7 +8,10 @@ class Model:
     def __init__(self, model_name, threshold):
         self.threshold = threshold
         self.model = torch.hub.load(
-            "ultralytics/yolov5", "custom", path=f"{model_name}.pt", trust_repo=True
+            "ultralytics/yolov5:v7.0",
+            "custom",
+            path=f"{model_name}.pt",
+            trust_repo=True,
         )
         self.model_name = os.path.basename(model_name)
 
